@@ -2,7 +2,13 @@
   "twilio": {
   	"accountSid": "[YOUR ACCOUNT SID HERE]",
   	"authToken": "[YOUR AUTH TOKEN HERE]",
-  	"applicationSid": "[YOUR APP SID HERE]",
-  	"port": 80
+  	"applicationSid": "[YOUR APP SID HERE]"
+  },
+  "app": {
+    "serviceNumber": "+1 (XXX) XXX-XXXX",
+  	"debugNumber": "+1 (XXX) XXX-XXXX"
+  },
+  "http": {
+  	"port": 8000
   }
 }
