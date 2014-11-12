@@ -1,0 +1,8 @@
+{
+  "twilio": {
+  	"accountSid": "[YOUR ACCOUNT SID HERE]",
+  	"authToken": "[YOUR AUTH TOKEN HERE]",
+  	"applicationSid": "[YOUR APP SID HERE]",
+  	"port": 80
+  }
+}
