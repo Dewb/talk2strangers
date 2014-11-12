@@ -15,4 +15,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     app.sendSMS(config.get("app.serviceNumber"), config.get("app.debugNumber"), "testing from node", function (err, msg) {
         console.log("Message queued")
     });
+    app.on('incomingSMSMessage', function(smsMessage) {
+        console.log("Received message: " + JSON.stringify(smsMessage));
+    });
 });
