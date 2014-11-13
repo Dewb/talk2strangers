@@ -1,4 +1,5 @@
-var config = require('config');
+var config = require('config'),
+    util = require('util');
 var express = require('express'),
     app = express();
 var twilio = require('twilio-api'),
@@ -16,6 +17,6 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         console.log("Message queued")
     });
     app.on('incomingSMSMessage', function(smsMessage) {
-        console.log("Received message: " + JSON.stringify(smsMessage));
+        console.log("Received message: " + util.inspect(smsMessage));
     });
 });
