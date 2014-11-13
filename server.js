@@ -22,13 +22,13 @@ function createUser(msg) {
         users[number] = { 
             "number": number,
             "joined": new Date(),
-            "active": false,
+            "active": true,
             "stranger": undefined,
             "greeting": msg.Body,
             "firstTime": true
         };
     }
-    return users[msg.from];
+    return users[number];
 }
 
 function deactivateUser(user) {
