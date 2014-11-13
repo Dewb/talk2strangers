@@ -10,5 +10,9 @@
   },
   "http": {
   	"port": 8000
+  },
+  "text": {
+  	"newUserMessage" : "* Welcome! Your phone number is private and will not be shared, but your conversations may be used for art. Reply QUIT at any time to stop receiving messages.",
+  	"newConversationMessage" : "* You are now talking to a stranger! At any time, reply NEW for a new stranger, or reply QUIT to disconnect."
   }
 }
