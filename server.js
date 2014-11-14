@@ -26,16 +26,18 @@ function createUser(msg) {
         users[number] = { 
             "number": number,
             "joined": new Date(),
-            "active": false,
-            "master": true,
-            "command": msg.Body
         };
     }
-    return users[msg.from];
+    return users[number];
 }
 
 function deactivateUser(user) {
-    user.active = false;
+    logConversation(user, "SYS", "Deleting user " + util.inspect(user));
+    delete users[user.number];
+}
+
+function countActiveUsers() {
+    return Object.keys(users).length;
 }
 
 function logConversation(user, direction, messageText) {
@@ -45,6 +47,11 @@ function logConversation(user, direction, messageText) {
     var c = conversations[user.number];
     c.push([direction, messageText]);
     console.log(user.number + " " + direction + " " + messageText);
+}
+
+function setBoxState(shouldOpen) {
+    boxOpen = shouldOpen;
+    console.log(boxOpen ? "*** Opening box" : "*** Closing box");
 }
 
 console.log("                   _                                        ");
@@ -60,29 +67,50 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     app.register();
     console.log("Application registered");
 
-    function sendMessageToUser(messageText) {
-        for(user in users) {
+    function sendMessageToUser(user, messageText) {
+        setTimeout(function() { 
             app.sendSMS(config.get("app.serviceNumber"), user.number, messageText, function (err, msg) {
-            if (err) {
-                console.log(err);
+                if (err) {
+                    console.log(err);
+                }
+                logConversation(user, "SENT", messageText);
+            });
+        }, 
+        100);
+    }
+
+    function sendMessageToEveryoneElse(originatingUser, messageText) {
+        for (number in users) {
+            if (number != originatingUser.number) {
+                sendMessageToUser(users[number], messageText);
             }
-            logConversation(user, "SENT", messageText);
-        });
-      }
+        }
+    }
+
+    function addUserToGame(msg) {
+        user = createUser(msg);
+        logConversation(user, "RECV", msg.Body);
+        var followers = countActiveUsers() - 1;
+        if (followers > 0) {
+            sendMessageToEveryoneElse(user, msg.Body);
+            var confirmCommandMessage = "Did " + followers + " " + (followers == 1 ? "person" : "people") + " follow your command?";
+            sendMessageToUser(user, confirmCommandMessage);
+        } else {
+            sendMessageToUser(user, "You're the first participant! Wait for instructions.");
+        }
     }
 
     app.on('incomingSMSMessage', function(msg) {
         var user = getUser(msg);
         if (user == undefined) {
-            user = createUser(msg);
-            sendMessageToUser(user, "Did all " + users.length + " people follow your command? Reply with 'quit' to quit.");
-            sendCommandToEveryone(msg.Body);
+            setTimeout(function() { addUserToGame(msg); }, 100);
+            return;
         } else if (msg.Body.toLowerCase() == "quit") {
             deactivateUser(user);
             return;
         } else {
             if (msg.Body.toLowerCase().indexOf("y") != -1) {
-                openBox();
+                setBoxState(true);
             }
         }
         logConversation(user, "RECV", msg.Body);
