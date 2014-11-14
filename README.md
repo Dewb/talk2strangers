@@ -1,9 +1,8 @@
-talk2strangers
-==============
+commandstrangers
+================
 
-Experimental audience interaction code for **Liars & Believers'** ***Talk to Strangers***
+Made at [art hack day: master ---slave---](arthackday.org/master-slave)
 
-February 19, 2015 at Oberon, Cambridge, MA.
+By Michael and Jonathan
 
-More:
-https://www.facebook.com/groups/1454323534829796/
+November 13, 2014
