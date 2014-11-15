@@ -12,7 +12,19 @@
   	"port": 8000
   },
   "text": {
-  	"newUserMessage" : "* Welcome! Your phone number is private and will not be shared, but your conversations may be used for art. Reply QUIT at any time to stop receiving messages.",
-  	"newConversationMessage" : "* You are now talking to a stranger! At any time, reply NEW for a new stranger, or reply QUIT to disconnect."
+  	"firstParticipantMessage" : "You're one of the first participants! Wait for instructions.",
+  	"commandSuccessfulMessage" : "Excellent! They will now get a reward.",
+  	"commandUnsuccessfulMessage" : "That's unfortunate. They will not be rewarded.",
+  	"masterTimedOutMessage" : "Sorry, you waited too long, you no longer have control over the room.",
+  	"quitCommand" : "quit",
+  	"confirmCommandPrompt": "Did at least {0} {1} follow your command?",
+  	"masterToFollowerMessage": "You've had your chance to give orders; now you are in the pool of order-followers. Don't worry, fantastic rewards can be yours if you play along.",
+  	"userReactivatedMessage": "You've rejoined the game; reply QUIT to leave."
+  },
+  "timing": {
+  	"masterResponseTimeout": 45000,
+  	"commandExecutionTime": 10000,
+  	"masterToFollowerDelay": 20000,
+  	"boxOpenDuration": 60000
   }
 }
