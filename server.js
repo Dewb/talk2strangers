@@ -4,6 +4,9 @@ var express = require('express'),
     app = express();
 var twilio = require('twilio-api'),
     client = new twilio.Client(config.get("twilio.accountSid"), config.get("twilio.authToken"));
+var nedb = require('nedb'),
+    users = new nedb({filename: 'users.db', autoload: true}),
+    conversations = new nedb({filename: 'conversations.db', autoload: true})
 
 var boxOpen = false;
 var boxCloseTimeoutCB = null;
@@ -23,55 +26,53 @@ app.get('/commands', function(req, res, next) {
 app.listen(config.get("http.port"));
 
 function getUser(msg) {
-    return users[msg.From];
+    users.findOne({number: msg.From}, function (err, doc) {
+        return doc;
+    });
 }
 
 function createUser(msg) {
     var number = msg.From;
-    if (!(number in users)) {
-        users[number] = { 
+    users.findOne({number: number}, function (err, user) {
+      if (user != null) {
+        return user;
+      } else {
+        user =  {
             "number": number,
             "joined": new Date(),
             "master": true,
             "active": true
         };
-    }
-    return users[number];
+        users.insert(user, function (err, user) { return user; });
+      }
+    });
 }
 
 function deactivateUser(user) {
     logConversation(user, "SYS", "Deactivating user " + util.inspect(user));
-    user.active = false;
+    users.update({ number: user.number }, { $set: { active: false } });
 }
 
 function countActiveUsers() {
-    var active = 0;
-    for (var number in users) {
-        var user = users[number];
-        if (user.active) { 
-            active++; 
-        }
-    }
-    return active;
+    users.count({ active: true }, function (err, count) {
+        return count;
+    });
 }
 
 function countFollowers() {
-    var followers = 0;
-    for (var number in users) {
-        var user = users[number];
-        if (user.active && !user.master) { 
-            followers++; 
-        }
-    }
-    return followers;
+    users.count({ active: true, master: false }, function (err, count) {
+        return count;
+    });
 }
 
 function logConversation(user, direction, messageText) {
-    if (!(user.number in conversations)) {
-        conversations[user.number] = [];
-    }
-    var c = conversations[user.number];
-    c.push([direction, messageText]);
+    conversations.count({ number: user.number}, function (err, count) {
+        if (count == 0) {
+            conversations.insert({ number: user.number, conversations: [[direction, messageText]] });
+        } else {
+            conversations.update({ number: user.number}, { $push: { conversations: [direction, messageText] } });
+        }
+    });
     console.log(user.number + " " + direction + " " + messageText);
 }
 
@@ -138,9 +139,8 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     }
 
     function sendMessageToFollowers(originatingUser, messageText) {
-        for (var number in users) {
-            user = users[number];
-            if (user.active && number != originatingUser.number) {
+        users.find({ active: true, $not: { number: originatingUser.number }}, function (err, activeUsers) {
+            for (var user in activeUsers) {
                 if (!user.master) {
                    sendMessageToUser(user, messageText);
                 } else {
@@ -148,18 +148,21 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                    checkMasterTimeoutAndMaybeDemote(user, messageText); 
                 }
             }
-        }
+        });
     }
 
     function checkMasterTimeoutAndMaybeDemote(user) {
         var now = new Date();
-        if (now - user.joined > config.get("timing.masterResponseTimeout")) {
-            user.master = false;
-            sendMessageToUser(user, config.get("text.masterTimedOutMessage"));
-            sendMessageToUser(user, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
-            return true;
-        }
-        return false;
+        users.find({ number: user.number }, function (err, user) {
+            if (now - user.joined > config.get("timing.masterResponseTimeout")) {
+                users.update({ number: user.number }, { $set: { master: false } } );
+                sendMessageToUser(user, config.get("text.masterTimedOutMessage"));
+                sendMessageToUser(user, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
+                return true;
+            } else {
+                return false;
+            }
+        });
     }
 
     function addUserToGame(msg) {
@@ -178,25 +181,25 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                 config.get("timing.commandExecutionTime"));
         } else {
             // This is the first user, nobody to send their command to
-            user.master = false;
+            users.update({ number: msg.From }, { $set: { master: false } });
             sendMessageToUser(user, config.get("text.firstParticipantMessage"));
         }
     }
 
     function recordVerificationFromMaster(user, msg) {
-        user.master = false;
-        if (checkMasterTimeoutAndMaybeDemote(user)) {
-            return;
-        }
-        if (msg.Body.toLowerCase().indexOf("y") != -1) {
-            openBox();
-            sendMessageToUser(user, config.get("text.commandSuccessfulMessage"));
-            sendMessageToUser(user, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
-            sendMessageToFollowers(user, config.get("text.followerSuccessfulMessage"));
-        } else {
-            closeBox();
-            sendMessageToUser(user, config.get("text.commandUnsuccessfulMessage"));
-        }
+        users.update({ number: user.number }, { $set: {master: false } }, function (err, user) {
+          if (checkMasterTimeoutAndMaybeDemote(user)) {
+              return;
+          }
+          if (msg.Body.toLowerCase().indexOf("y") != -1) {
+              openBox();
+              sendMessageToUser(user, config.get("text.commandSuccessfulMessage"));
+              sendMessageToUser(user, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
+          } else {
+              closeBox();
+              sendMessageToUser(user, config.get("text.commandUnsuccessfulMessage"));
+          }
+      });
     }
 
     app.on('incomingSMSMessage', function(msg) {
@@ -209,7 +212,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         } else if (user.master) {
             recordVerificationFromMaster(user, msg);
         } else if (!user.active) {
-            user.active = true;
+            users.update({ number: user.number }, { $set: { active: true } });
             sendMessageToUser(user, config.get("text.userReactivatedMessage"));
         } else {
             // follower can't send any commands, convince them to recruit someone else
