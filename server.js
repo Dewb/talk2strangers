@@ -125,7 +125,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     console.log("Application registered");
 
     function sendMessageToUser(user, messageText, delay) {
-        delay = delay || 100;
+        delay = delay || 30;
         setTimeout(function() { 
             app.sendSMS(config.get("app.serviceNumber"), user.number, messageText, function (err, msg) {
                 if (err) {
@@ -192,6 +192,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             openBox();
             sendMessageToUser(user, config.get("text.commandSuccessfulMessage"));
             sendMessageToUser(user, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
+            sendMessageToFollowers(user, config.get("text.followerSuccessfulMessage"));
         } else {
             closeBox();
             sendMessageToUser(user, config.get("text.commandUnsuccessfulMessage"));
@@ -210,6 +211,9 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         } else if (!user.active) {
             user.active = true;
             sendMessageToUser(user, config.get("text.userReactivatedMessage"));
+        } else {
+            // follower can't send any commands, convince them to recruit someone else
+            sendMessageToUser(user, config.get("text.followerChatterMessage"));
         }
         logConversation(user, "RECV", msg.Body);
     });
