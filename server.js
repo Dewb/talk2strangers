@@ -6,19 +6,19 @@ var twilio = require('twilio-api'),
     client = new twilio.Client(config.get("twilio.accountSid"), config.get("twilio.authToken"));
 var nedb = require('nedb'),
     users = new nedb({filename: 'data/users.db', autoload: true}),
-    conversations = new nedb({filename: 'data/conversations.db', autoload: true})
+    history = new nedb({filename: 'data/history.db', autoload: true});
 
 var boxOpen = false;
 var boxCloseTimeoutCB = null;
-
-var commands = [];
 
 app.use(client.middleware());
 app.get('/box', function(req, res, next) {
     res.send(boxOpen ? "1" : "0");
 });
 app.get('/commands', function(req, res, next) {
-    res.send(JSON.stringify(commands));
+    history.findOne({ history: "commands" }, function (err, commandHistory) {
+        res.send("{" + JSON.stringify(commandHistory.contents) + "}");
+    });
 });
 app.listen(config.get("http.port"));
 
@@ -59,15 +59,26 @@ function countFollowers(callback) {
 }
 
 function logConversation(userNumber, direction, messageText) {
-    conversations.count({ number: userNumber}, function (err, count) {
+    history.count({ number: userNumber}, function (err, count) {
         if (err) { logError(err); }
         if (count == 0) {
-            conversations.insert({ number: userNumber, conversations: [[direction, messageText]] });
+            history.insert({ number: userNumber, conversations: [[direction, messageText]] });
         } else {
-            conversations.update({ number: userNumber}, { $push: { conversations: [direction, messageText] } });
+            history.update({ number: userNumber }, { $push: { conversations: [direction, messageText] } });
         }
     });
     console.log(userNumber + " " + direction + " " + messageText);
+}
+
+function logCommand(command) {
+    history.count({ history: "commands" }, function (err, count) {
+        if (err) { logError(err); }
+        if (count == 0) {
+            history.insert({ history: "commands", contents: [command] });
+        } else {
+            history.update({ history: "commands" }, { $push: { contents: command }});
+        }
+    });
 }
 
 function logError(err) {
@@ -143,25 +154,25 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                    sendMessage(user.number, messageText);
                 } else {
                    // master that never responded
-                   checkMasterTimeoutAndMaybeDemote(user.number, messageText); 
+                   checkMasterTimeoutAndMaybeDemote(user.number); 
                 }
             }
         });
     }
 
-    function checkMasterTimeoutAndMaybeDemote(userNumber) {
-        var now = new Date();
-        users.find({ number: userNumber }, function (err, user) {
+    function checkMasterTimeoutAndMaybeDemote(userNumber, callback) {
+        users.findOne({ number: userNumber }, function (err, user) {
             if (err) { logError(err); }
+            var now = new Date();
             if (now - user.joined > config.get("timing.masterResponseTimeout")) {
                 users.update({ number: userNumber }, { $set: { master: false } }, function (err, num) {
                     if (err) { logError(err); }
                     sendMessage(userNumber, config.get("text.masterTimedOutMessage"));
                     sendMessage(userNumber, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
+                    if (callback) { callback(true); }
                 });
-                return true;
             } else {
-                return false;
+                if (callback) { callback(false); }
             }
         });
     }
@@ -173,7 +184,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             countFollowers(function (err, followerCount) {
                 if (err) { logError(err); }
                 if (followerCount > 0) {
-                    commands.push(command);
+                    logCommand(command);
                     sendMessageFromMasterToFollowers(user.number, command);
                     sendMessage(
                         user.number, 
@@ -193,19 +204,22 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     function recordVerificationFromMaster(masterNumber, msg) {
         users.update({ number: masterNumber }, { $set: { master: false } }, function (err, num) {
             if (err) { logError(err); }
-            if (checkMasterTimeoutAndMaybeDemote(masterNumber)) {
-                return;
-            }
-            if (msg.Body.toLowerCase().indexOf("y") != -1) {
-                openBox();
-                sendMessage(masterNumber, config.get("text.commandSuccessfulMessage"));
-                sendMessage(masterNumber, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
-                sendMessageFromMasterToFollowers(masterNumber, config.get("text.followerSuccessfulMessage"));
-            } else {
-                closeBox();
-                sendMessage(masterNumber, config.get("text.commandUnsuccessfulMessage"));
-            }
-      });
+            checkMasterTimeoutAndMaybeDemote(masterNumber, function (demoted) {
+                if (demoted) {
+                    return;
+                } else {
+                    if (msg.Body.toLowerCase().indexOf("y") != -1) {
+                        openBox();
+                        sendMessage(masterNumber, config.get("text.commandSuccessfulMessage"));
+                        sendMessage(masterNumber, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
+                        sendMessageFromMasterToFollowers(masterNumber, config.get("text.followerSuccessfulMessage"));
+                    } else {
+                        closeBox();
+                        sendMessage(masterNumber, config.get("text.commandUnsuccessfulMessage"));
+                    }
+                }
+            });
+        });
     }
 
     app.on('incomingSMSMessage', function(msg) {
