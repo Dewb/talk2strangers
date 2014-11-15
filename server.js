@@ -8,15 +8,19 @@ var twilio = require('twilio-api'),
 var boxOpen = false;
 var boxCloseTimeoutCB = null;
 
-app.use(client.middleware());
-app.get('/box', function(req, res, next) {
-    res.send({boxOpen: boxOpen});
-});
-app.listen(config.get("http.port"));
-
 var users = {};
 var waitingQueue = [];
 var conversations = {};
+var commands = [];
+
+app.use(client.middleware());
+app.get('/box', function(req, res, next) {
+    res.send(boxOpen ? "1" : "0");
+});
+app.get('/commands', function(req, res, next) {
+    res.send(JSON.stringify(commands));
+});
+app.listen(config.get("http.port"));
 
 function getUser(msg) {
     return users[msg.From];
@@ -166,6 +170,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         var followers = countFollowers();
         
         if (followers > 0) {
+            commands.push(command);
             sendMessageToFollowers(user, command);
             sendMessageToUser(
                 user, 

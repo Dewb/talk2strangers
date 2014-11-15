@@ -25,6 +25,6 @@
   	"masterResponseTimeout": 45000,
   	"commandExecutionTime": 10000,
   	"masterToFollowerDelay": 20000,
-  	"boxOpenDuration": 60000
+  	"boxOpenDuration": 20000
   }
 }
