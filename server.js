@@ -8,54 +8,22 @@ var nedb = require('nedb'),
     users = new nedb({filename: 'data/users.db', autoload: true}),
     history = new nedb({filename: 'data/history.db', autoload: true});
 
-var boxOpen = false;
-var boxCloseTimeoutCB = null;
-
 app.use(client.middleware());
-app.get('/box', function(req, res, next) {
-    res.send(boxOpen ? "1" : "0");
-});
-app.get('/commands', function(req, res, next) {
-    history.findOne({ history: "commands" }, function (err, commandHistory) {
-        res.send("{" + JSON.stringify(commandHistory.contents) + "}");
+app.get('/chatter', function(req, res, next) {
+    history.findOne({ history: "chatter" }, function (err, chatterHistory) {
+        res.send("{" + JSON.stringify(chatterHistory.contents) + "}");
     });
 });
 app.listen(config.get("http.port"));
 
-function getUser(msg, callback) {
-    users.findOne({number: msg.From}, callback);
-}
+var waitingQueue = [];
 
-function createUser(msg, callback) {
-    var number = msg.From;
-    users.findOne({number: number}, function (err, user) {
-        if (err) { logError(err); }
-
-        if (user != null) {
-            return user;
-        } else {
-            user =  {
-                "number": number,
-                "joined": new Date(),
-                "master": true,
-                "active": true
-            };
-            users.insert(user, callback);
-        }
-    });
-}
-
-function deactivateUser(userNumber) {
-    logConversation(userNumber, "SYSTEM", "Deactivating user");
-    users.update({ number: userNumber }, { $set: { active: false } });
+function getUser(usernum, callback) {
+    users.findOne({number: usernum}, callback);
 }
 
 function countActiveUsers(callback) {
     users.count({ active: true }, callback);
-}
-
-function countFollowers(callback) {
-    users.count({ active: true, master: false }, callback);
 }
 
 function logConversation(userNumber, direction, messageText) {
@@ -70,13 +38,13 @@ function logConversation(userNumber, direction, messageText) {
     console.log(userNumber + " " + direction + " " + messageText);
 }
 
-function logCommand(command) {
-    history.count({ history: "commands" }, function (err, count) {
+function logChatter(chatter) {
+    history.count({ history: "chatter" }, function (err, count) {
         if (err) { logError(err); }
         if (count == 0) {
-            history.insert({ history: "commands", contents: [command] });
+            history.insert({ history: "chatter", contents: [chatter] });
         } else {
-            history.update({ history: "commands" }, { $push: { contents: command }});
+            history.update({ history: "chatter" }, { $push: { contents: chatter }});
         }
     });
 }
@@ -85,29 +53,6 @@ function logError(err) {
     console.log(util.inspect(err));
 }
 
-function openBox() {
-    setBoxState(true);
-}
-
-function closeBox() {
-    setBoxState(false);
-}
-
-function setBoxState(shouldOpen) {
-    var duration = config.get("timing.boxOpenDuration");
-    if (shouldOpen) {
-        if (boxOpen) {
-            clearTimeout(boxCloseTimeoutCB);
-            console.log("*** Box already open, resetting timeout.");
-        }
-        boxCloseTimeoutCB = setTimeout(closeBox, duration);
-        console.log("*** Box open, closing in " + Math.floor(duration/1000) + " seconds.");
-        boxOpen = true;
-    } else if (boxOpen && !shouldOpen) {
-        console.log("*** Closing box!");
-        boxOpen = false;
-    } 
-}
 
 if (!String.format) {
   String.format = function(format) {
@@ -133,11 +78,16 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     }
     app.register();
     console.log("Application registered");
+    processWaitingQueue();
 
-    function sendMessage(userNumber, messageText, delay) {
+    function sendMessage(user, messageText, delay) {
+        if (!user.active) {
+            logError("Tried to send message to inactive user!");
+            return;
+        }
         delay = delay || 30;
         setTimeout(function() { 
-            app.sendSMS(config.get("app.serviceNumber"), userNumber, messageText, function (err, msg) {
+            app.sendSMS(config.get("app.serviceNumber"), user.number, messageText, function (err, msg) {
                 if (err) { logError(err); }
                 logConversation(userNumber, "< SENT", messageText);
             });
@@ -145,101 +95,97 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         delay);
     }
 
-    function sendMessageFromMasterToFollowers(masterNumber, messageText) {
-        users.find({ active: true, $not: { number: masterNumber }}, function (err, activeUsers) {
-            if (err) { logError(err); }
-            for (var userIndex in activeUsers) {
-                var user = activeUsers[userIndex];
-                if (!user.master) {
-                   sendMessage(user.number, messageText);
-                } else {
-                   // master that never responded
-                   checkMasterTimeoutAndMaybeDemote(user.number); 
-                }
-            }
-        });
+    function queueUserForConversation(user) {
+        users.update({ number: user.strangerNumber }, { $set: { strangerNumber: null } });
+        if (waitingQueue.indexOf(user.number) == -1) {
+            waitingQueue.push(user.number);
+        }
+        processWaitingQueue();
     }
 
-    function checkMasterTimeoutAndMaybeDemote(userNumber, callback) {
-        users.findOne({ number: userNumber }, function (err, user) {
-            if (err) { logError(err); }
-            var now = new Date();
-            if (now - user.joined > config.get("timing.masterResponseTimeout")) {
-                users.update({ number: userNumber }, { $set: { master: false } }, function (err, num) {
-                    if (err) { logError(err); }
-                    sendMessage(userNumber, config.get("text.masterTimedOutMessage"));
-                    sendMessage(userNumber, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
-                    if (callback) { callback(true); }
-                });
-            } else {
-                if (callback) { callback(false); }
-            }
-        });
-    }
+    function processWaitingQueue() {
 
-    function addUserToGame(msg) {
-        createUser(msg, function (err, user) {  
-            if (err) { logError(err); }     
-            var command = msg.Body;
-            countFollowers(function (err, followerCount) {
+        // todo: scan user db for active users with no stranger to add to queue
+
+        while (waitingQueue.length >= 2) {
+            var number1 = waitingQueue.shift();
+            var number2 = waitingQueue.shift();
+            users.findOne({number: number1}, function (err, user1) {
                 if (err) { logError(err); }
-                if (followerCount > 0) {
-                    logCommand(command);
-                    sendMessageFromMasterToFollowers(user.number, command);
-                    sendMessage(
-                        user.number, 
-                        String.format(config.get("text.confirmCommandPrompt"), followerCount, (followerCount == 1 ? "person" : "people")),
-                        config.get("timing.commandExecutionTime"));
-                } else {
-                    // This is the first user, nobody to send their command to
-                    users.update({ number: user.number }, { $set: { master: false } }, function (err, num) {
-                        if (err) { logError(err); }
-                        sendMessage(user.number, config.get("text.firstParticipantMessage"));
-                    });
-                }                
-            });
+                users.findOne({number: number2}, function (err, user2) {
+                    if (err) { logError(err); }
+                    connectStrangers(user1, user2);
+                }
+            }
+        }
+    }
+
+    function connectStrangers(user1, user2) {
+        users.update({ number: user1.number }, { $set: { active: true, strangerNumber: user2.number } });
+        users.update({ number: user2.number }, { $set: { active: true, strangerNumber: user1.number } });
+
+        logConversation(user1, "SYSTEM", "New conversation with " + user2.number)
+        logConversation(user2, "SYSTEM", "New conversation with " + user1.number)
+
+        sendMessage(user1, config.get("text.newConversationMessage"));
+        sendMessage(user2, config.get("text.newConversationMessage"));
+    }
+
+    function addUserToSystem(msg) {
+        var number = msg.From;
+        users.findOne({number: number}, function (err, user) {
+            if (err) { logError(err); }
+            if (user == null) {
+                user =  {
+                    "number": number,
+                    "joined": new Date(),
+                    "strangerNumber": null,
+                    "active": true
+                };
+                users.insert(user, function (err, user) {
+                    sendMessage(user, config.get("text.newUserMessage"));
+                    queueUserForConversation(user);
+                });
+            }
         });
     }
 
-    function recordVerificationFromMaster(masterNumber, msg) {
-        users.update({ number: masterNumber }, { $set: { master: false } }, function (err, num) {
-            if (err) { logError(err); }
-            checkMasterTimeoutAndMaybeDemote(masterNumber, function (demoted) {
-                if (demoted) {
-                    return;
-                } else {
-                    if (msg.Body.toLowerCase().indexOf("y") != -1) {
-                        openBox();
-                        sendMessage(masterNumber, config.get("text.commandSuccessfulMessage"));
-                        sendMessage(masterNumber, config.get("text.masterToFollowerMessage"), config.get("timing.masterToFollowerDelay"));
-                        sendMessageFromMasterToFollowers(masterNumber, config.get("text.followerSuccessfulMessage"));
-                    } else {
-                        closeBox();
-                        sendMessage(masterNumber, config.get("text.commandUnsuccessfulMessage"));
-                    }
-                }
+    function deactivateUser(user) {
+        logConversation(user.number, "SYSTEM", "Deactivating user");
+        if (user.strangerNumber != null) {
+            getUser(user.strangerNumber, function (err, otherUser) {
+                queueUserForConversation(otherUser);
+            }
+        }
+        users.update({ number: user.number }, { $set: { active: false, strangerNumber: null } });
+    }
+
+    function relayConversationToStranger(user, messageText) {
+        if (user.strangerNumber != null) {
+            getUser(user.strangerNumber, function (err, otherUser) {
+                sendMessage(otherUser, messageText);
+                logChatter(messageText);
             });
-        });
+        }
     }
 
     app.on('incomingSMSMessage', function(msg) {
         logConversation(msg.From, "> RECV", msg.Body);
-        getUser(msg, function (err, user) {
+        getUser(msg.From, function (err, user) {
             if (err) { logError(err); }
             if (user == undefined) {
-                addUserToGame(msg);
+                addUserToSystem(msg);
             } else if (msg.Body.toLowerCase() == config.get("text.quitCommand")) {
-                deactivateUser(user.number);
-            } else if (user.master) {
-                recordVerificationFromMaster(user.number, msg);
+                deactivateUser(user);
+            } else if (msg.Body.toLowerCase() == config.get("text.newStrangerCommand")) {
+                queueUserForConversation(user);
             } else if (!user.active) {
                 users.update({ number: user.number }, { $set: { active: true } }, function (err, num) {
                     if (err) { logError(err); }
-                    sendMessage(user.number, config.get("text.userReactivatedMessage"));          
+                    sendMessage(user, config.get("text.userReactivatedMessage"));          
                 });
             } else {
-                // follower can't send any commands, convince them to recruit someone else
-                sendMessage(user.number, config.get("text.followerChatterMessage"));
+                relayConversationToStranger(user, msg.Body);
             }
         });      
     });
