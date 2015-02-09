@@ -1,20 +1,17 @@
-var commands = [];
+var items = [];
 
-$.getJSON('/commands', function(data) {
+$.getJSON('http://talk.dewb.org/chatter', function(data) {
   $.each(data, function(key, val) {
-    // Form urls and stuff
-    commands.push(val);
+    items.push(val);
   });
 });
 
-//commands = ["No, you do a hamster dance!","Drink some wine","Pet my schmao!","Open my wine with David's cork screw"];
-
-for (var i=0; i < commands.length; i++) {
+for (var i=0; i < items.length; i++) {
   var command = document.createElement('div');
   var clear = document.createElement('div');
   command.className = 'from-them';
   clear.className = 'clear';
-  command.innerHTML = '<p>' + commands[i] + '</p>';
+  command.innerHTML = '<p>' + items[i] + '</p>';
   
   document.getElementById('commands').appendChild(command);
   document.getElementById('commands').appendChild(clear);
