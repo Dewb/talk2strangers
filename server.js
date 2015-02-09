@@ -89,7 +89,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         setTimeout(function() { 
             app.sendSMS(config.get("app.serviceNumber"), user.number, messageText, function (err, msg) {
                 if (err) { logError(err); }
-                logConversation(userNumber, "< SENT", messageText);
+                logConversation(user.number, "< SENT", messageText);
             });
         }, 
         delay);
@@ -115,8 +115,8 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                 users.findOne({number: number2}, function (err, user2) {
                     if (err) { logError(err); }
                     connectStrangers(user1, user2);
-                }
-            }
+                });
+            });
         }
     }
 
@@ -155,7 +155,7 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         if (user.strangerNumber != null) {
             getUser(user.strangerNumber, function (err, otherUser) {
                 queueUserForConversation(otherUser);
-            }
+            });
         }
         users.update({ number: user.number }, { $set: { active: false, strangerNumber: null } });
     }
