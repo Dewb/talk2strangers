@@ -112,10 +112,15 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             while (waitingUsers.length >= 2) {
                 var user1 = waitingUsers.shift();
                 var user2 = waitingUsers.shift();
+                // Check if these strangers have been connected before
                 if (user1.strangerHistory.indexOf(user2.number) != -1 ||
                     user2.strangerHistory.indexOf(user1.number) != -1) {
-                    waitingUsers.unshift(user1);
-                    waitingUsers.push(user2);
+                    // Simple sifting technique for eventually finding matchable pairs: toss one at random, put other in back of queue
+                    if (Math.random() < 0.5) {
+                        waitingUsers.push(user1);
+                    } else {
+                        waitingUsers.push(user2);
+                    }
                 } else {
                     connectStrangers(user1, user2);
                 }
