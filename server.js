@@ -110,8 +110,15 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                 console.log("Number of users waiting for a connection: " + waitingUsers.length);
             }
             while (waitingUsers.length >= 2) {
-                connectStrangers(waitingUsers.shift(), waitingUsers.shift());
-            }
+                var user1 = waitingUsers.shift();
+                var user2 = waitingUsers.shift();
+                if (user1.strangerHistory.indexOf(user2.number) != -1 ||
+                    user2.strangerHistory.indexOf(user1.number) != -1) {
+                    waitingUsers.unshift(user1);
+                    waitingUsers.push(user2);
+                } else {
+                    connectStrangers(waitingUsers.shift(), waitingUsers.shift());
+                }
         });
     }
 
