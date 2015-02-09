@@ -161,13 +161,24 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         }
     }
 
+    var quitCommands = config.get("text.quitCommands");
+
+    function isQuitCommand(text) {
+        for (var i = 0; i < quitCommands.length; i++) {
+            if (quitCommands[i] == text) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     app.on('incomingSMSMessage', function(msg) {
         logConversation(msg.From, "> RECV", msg.Body);
         getUser(msg.From, function (err, user) {
             if (err) { logError(err); }
             if (user == undefined) {
                 addUserToSystem(msg);
-            } else if (msg.Body.toLowerCase() == config.get("text.quitCommand")) {
+            } else if (isQuitCommand(msg.Body.toLowerCase())) {
                 deactivateUser(user);
             } else if (msg.Body.toLowerCase() == config.get("text.newStrangerCommand")) {
                 sendMessage(user, config.get("text.conversationEndedMessage"));

@@ -14,9 +14,10 @@
   "text": {
     "newUserMessage" : "* Welcome! Your phone number is private and will not be shared, but your conversations may be used for art. Reply QUIT at any time to stop receiving messages.",
     "newConversationMessage" : "* Say hello! You are now talking to a stranger. Be nice, don't be creepy. At any time, reply NEW for a new stranger, or reply QUIT to disconnect.",
-  	"quitCommand" : "quit",
+    "conversationEndedMessage" : "* This conversation is now over, waiting for a new stranger...",
+    "quitCommands" : ["quit", "stop", "stopall", "unsubscribe", "cancel", "end"],
     "newStrangerCommand" : "new",
-    "userDeactivatedMessage": "Thank you for participating! Text this number again later if you'd to try again.",
-  	"userReactivatedMessage": "You've rejoined Talk to Strangers; reply QUIT to leave, or NEW for a new stranger."
+    "userDeactivatedMessage": "* Thank you for participating! Text this number again later if you'd to try again.",
+    "userReactivatedMessage": "* You've rejoined Talk to Strangers; reply QUIT to leave, or NEW for a new stranger."
   }
 }
