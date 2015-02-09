@@ -16,8 +16,6 @@ app.get('/chatter', function(req, res, next) {
 });
 app.listen(config.get("http.port"));
 
-var waitingQueue = [];
-
 function getUser(usernum, callback) {
     users.findOne({number: usernum}, callback);
 }
@@ -95,41 +93,34 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
         delay);
     }
 
-    function queueUserForConversation(user) {
-        users.update({ number: user.strangerNumber }, { $set: { strangerNumber: null } });
-        if (waitingQueue.indexOf(user.number) == -1) {
-            waitingQueue.push(user.number);
+    function endConversationForUser(user) {
+        if (user.strangerNumber != null) {
+            users.update({ number: user.strangerNumber }, { $set: { strangerNumber: null } });
+            getUser(user.strangerNumber, function (err, otherUser) {
+                if (otherUser != null) {
+                    sendMessage(otherUser, config.get("text.conversationEndedMessage"));
+                    processWaitingQueue();
+                }
+            });
         }
-        processWaitingQueue();
+        users.update({ number: user.number }, { $set: { strangerNumber: null } });
     }
 
     function processWaitingQueue() {
-        users.find({ strangerNumber: null }, function (err, waitingUsers) {
-            for (var user in waitingUsers) {
-                if (waitingQueue.indexOf(user.number) == -1) {
-                    waitingQueue.push(user.number);
-                }
-            }
-            while (waitingQueue.length >= 2) {
-                var number1 = waitingQueue.shift();
-                var number2 = waitingQueue.shift();
-                users.findOne({number: number1}, function (err, user1) {
-                    if (err) { logError(err); }
-                    users.findOne({number: number2}, function (err, user2) {
-                        if (err) { logError(err); }
-                        connectStrangers(user1, user2);
-                    });
-                });
+        users.find({ active: true, strangerNumber: null }, function (err, waitingUsers) {
+            console.log("Number of users waiting for a connection: " + waitingUsers.length);
+            while (waitingUsers.length >= 2) {
+                connectStrangers(waitingUsers.shift(), waitingUsers.shift());
             }
         });
     }
 
     function connectStrangers(user1, user2) {
-        users.update({ number: user1.number }, { $set: { active: true, strangerNumber: user2.number } });
-        users.update({ number: user2.number }, { $set: { active: true, strangerNumber: user1.number } });
+        users.update({ number: user1.number }, { $set: { active: true, strangerNumber: user2.number }, $push: { strangerHistory: user2.number } });
+        users.update({ number: user2.number }, { $set: { active: true, strangerNumber: user1.number }, $push: { strangerHistory: user1.number } });
 
-        logConversation(user1, "SYSTEM", "New conversation with " + user2.number)
-        logConversation(user2, "SYSTEM", "New conversation with " + user1.number)
+        logConversation(user1.number, "SYSTEM", "New conversation with " + user2.number)
+        logConversation(user2.number, "SYSTEM", "New conversation with " + user1.number)
 
         sendMessage(user1, config.get("text.newConversationMessage"));
         sendMessage(user2, config.get("text.newConversationMessage"));
@@ -144,11 +135,12 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                     "number": number,
                     "joined": new Date(),
                     "strangerNumber": null,
-                    "active": true
+                    "active": true,
+                    "strangerHistory": []
                 };
                 users.insert(user, function (err, user) {
                     sendMessage(user, config.get("text.newUserMessage"));
-                    queueUserForConversation(user);
+                    processWaitingQueue();
                 });
             }
         });
@@ -156,19 +148,18 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
 
     function deactivateUser(user) {
         logConversation(user.number, "SYSTEM", "Deactivating user");
-        if (user.strangerNumber != null) {
-            getUser(user.strangerNumber, function (err, otherUser) {
-                queueUserForConversation(otherUser);
-            });
-        }
-        users.update({ number: user.number }, { $set: { active: false, strangerNumber: null } });
+        endConversationForUser(user);
+        sendMessage(user, config.get("text.userDeactivatedMessage"));
+        users.update({ number: user.number }, { $set: { active: false } });
     }
 
     function relayConversationToStranger(user, messageText) {
         if (user.strangerNumber != null) {
             getUser(user.strangerNumber, function (err, otherUser) {
-                sendMessage(otherUser, messageText);
-                logChatter(messageText);
+                if (otherUser != null) {
+                    sendMessage(otherUser, messageText);
+                    logChatter(messageText);
+                }
             });
         }
     }
@@ -182,7 +173,9 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             } else if (msg.Body.toLowerCase() == config.get("text.quitCommand")) {
                 deactivateUser(user);
             } else if (msg.Body.toLowerCase() == config.get("text.newStrangerCommand")) {
-                queueUserForConversation(user);
+                sendMessage(user, config.get("text.conversationEndedMessage"));
+                endConversationForUser(user);
+                processWaitingQueue();
             } else if (!user.active) {
                 users.update({ number: user.number }, { $set: { active: true } }, function (err, num) {
                     if (err) { logError(err); }
