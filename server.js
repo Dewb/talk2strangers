@@ -104,20 +104,24 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     }
 
     function processWaitingQueue() {
-
-        // todo: scan user db for active users with no stranger to add to queue
-
-        while (waitingQueue.length >= 2) {
-            var number1 = waitingQueue.shift();
-            var number2 = waitingQueue.shift();
-            users.findOne({number: number1}, function (err, user1) {
-                if (err) { logError(err); }
-                users.findOne({number: number2}, function (err, user2) {
+        users.find({ strangerNumber: null }, function (err, waitingUsers) {
+            for (var user in waitingUsers) {
+                if (waitingQueue.indexOf(user.number) == -1) {
+                    waitingQueue.push(user.number);
+                }
+            }
+            while (waitingQueue.length >= 2) {
+                var number1 = waitingQueue.shift();
+                var number2 = waitingQueue.shift();
+                users.findOne({number: number1}, function (err, user1) {
                     if (err) { logError(err); }
-                    connectStrangers(user1, user2);
+                    users.findOne({number: number2}, function (err, user2) {
+                        if (err) { logError(err); }
+                        connectStrangers(user1, user2);
+                    });
                 });
-            });
-        }
+            }
+        });
     }
 
     function connectStrangers(user1, user2) {
