@@ -106,7 +106,9 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
 
     function processWaitingQueue() {
         users.find({ active: true, strangerNumber: null }, function (err, waitingUsers) {
-            console.log("Number of users waiting for a connection: " + waitingUsers.length);
+            if (waitingUsers.length > 0) {
+                console.log("Number of users waiting for a connection: " + waitingUsers.length);
+            }
             while (waitingUsers.length >= 2) {
                 connectStrangers(waitingUsers.shift(), waitingUsers.shift());
             }
