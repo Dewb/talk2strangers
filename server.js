@@ -117,8 +117,9 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                     waitingUsers.unshift(user1);
                     waitingUsers.push(user2);
                 } else {
-                    connectStrangers(waitingUsers.shift(), waitingUsers.shift());
+                    connectStrangers(user1, user2);
                 }
+            }
         });
     }
 
