@@ -76,7 +76,6 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
     }
     app.register();
     console.log("Application registered");
-    processWaitingQueue();
 
     function sendMessage(user, messageText, delay) {
         if (!user.active) {
@@ -99,7 +98,6 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             getUser(user.strangerNumber, function (err, otherUser) {
                 if (otherUser != null) {
                     sendMessage(otherUser, config.get("text.conversationEndedMessage"));
-                    processWaitingQueue();
                 }
             });
         }
@@ -140,7 +138,6 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
                 };
                 users.insert(user, function (err, user) {
                     sendMessage(user, config.get("text.newUserMessage"));
-                    processWaitingQueue();
                 });
             }
         });
@@ -175,7 +172,6 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             } else if (msg.Body.toLowerCase() == config.get("text.newStrangerCommand")) {
                 sendMessage(user, config.get("text.conversationEndedMessage"));
                 endConversationForUser(user);
-                processWaitingQueue();
             } else if (!user.active) {
                 users.update({ number: user.number }, { $set: { active: true } }, function (err, num) {
                     if (err) { logError(err); }
@@ -186,4 +182,8 @@ client.account.getApplication(config.get("twilio.applicationSid"), function(err,
             }
         });      
     });
+
+    setInterval(function() {
+        processWaitingQueue();
+    }, 7000)
 });
